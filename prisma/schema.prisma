@@ -1,0 +1,287 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  MAINTENANCE
+  STUDENT
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum BuildingStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ClassroomStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ClassroomType {
+  CLASSROOM
+  LABORATORY
+  OFFICE
+  LIBRARY
+  COMMON_AREA
+}
+
+enum SensorType {
+  ENERGY
+  AIR_CONDITIONING
+  LIGHTING
+  OCCUPANCY
+}
+
+enum SensorStatus {
+  ACTIVE
+  INACTIVE
+  MAINTENANCE
+}
+
+enum ReadingSource {
+  SIMULATED
+  MANUAL
+  IMPORTED
+}
+
+enum AlertType {
+  HIGH_CONSUMPTION
+  EMPTY_ROOM_CONSUMPTION
+  SENSOR_INACTIVE
+  ABNORMAL_READING
+}
+
+enum AlertSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum AlertStatus {
+  ACTIVE
+  RESOLVED
+  IGNORED
+}
+
+enum RankingPeriod {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+model User {
+  id           String     @id @default(uuid()) @db.Char(36)
+  name         String     @db.VarChar(150)
+  email        String     @unique @db.VarChar(191)
+  passwordHash String     @map("password_hash") @db.VarChar(255)
+  role         UserRole
+  status       UserStatus @default(ACTIVE)
+  createdAt    DateTime   @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt    DateTime   @updatedAt @map("updated_at") @db.DateTime(3)
+
+  alertsResolved Alert[] @relation("AlertResolvedByUser")
+
+  @@index([role])
+  @@index([status])
+  @@map("users")
+}
+
+model Building {
+  id          String           @id @default(uuid()) @db.Char(36)
+  name        String           @db.VarChar(150)
+  description String?          @db.Text
+  location    String?          @db.VarChar(255)
+  status      BuildingStatus   @default(ACTIVE)
+  createdAt   DateTime         @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt   DateTime         @updatedAt @map("updated_at") @db.DateTime(3)
+
+  classrooms     Classroom[]
+  alertsBuilding  Alert[]        @relation("AlertBuilding")
+  savingRankings  SavingRanking[] @relation("SavingRankingBuilding")
+  aiAnalyses      AiAnalysis[]
+
+  @@index([status])
+  @@index([name])
+  @@map("buildings")
+}
+
+model Classroom {
+  id         String           @id @default(uuid()) @db.Char(36)
+  buildingId String           @map("building_id") @db.Char(36)
+  name       String           @db.VarChar(150)
+  floor      Int
+  capacity   Int              @default(0) @db.UnsignedInt
+  type       ClassroomType
+  status     ClassroomStatus  @default(ACTIVE)
+  createdAt  DateTime         @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt  DateTime         @updatedAt @map("updated_at") @db.DateTime(3)
+
+  building        Building        @relation(fields: [buildingId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  sensors         Sensor[]
+  alertsClassroom Alert[]         @relation("AlertClassroom")
+  savingRankings  SavingRanking[] @relation("SavingRankingClassroom")
+  aiAnalyses      AiAnalysis[]
+
+  @@index([buildingId])
+  @@index([status])
+  @@index([type])
+  @@index([name])
+  @@map("classrooms")
+}
+
+model Sensor {
+  id          String       @id @default(uuid()) @db.Char(36)
+  classroomId String       @map("classroom_id") @db.Char(36)
+  name        String       @db.VarChar(150)
+  type        SensorType
+  unit        String       @db.VarChar(50)
+  status      SensorStatus @default(ACTIVE)
+  installedAt DateTime     @default(now()) @map("installed_at") @db.DateTime(3)
+  createdAt   DateTime     @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt   DateTime     @updatedAt @map("updated_at") @db.DateTime(3)
+
+  classroom      Classroom      @relation(fields: [classroomId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  readings       EnergyReading[]
+  alertsSensor   Alert[]         @relation("AlertSensor")
+  aiAnalyses     AiAnalysis[]
+
+  @@index([classroomId])
+  @@index([type])
+  @@index([status])
+  @@index([name])
+  @@map("sensors")
+}
+
+model EnergyReading {
+  id         String        @id @default(uuid()) @db.Char(36)
+  sensorId   String        @map("sensor_id") @db.Char(36)
+  value      Decimal       @db.Decimal(12, 4)
+  unit       String        @db.VarChar(50)
+  source     ReadingSource
+  recordedAt DateTime      @map("recorded_at") @db.DateTime(3)
+  createdAt  DateTime      @default(now()) @map("created_at") @db.DateTime(3)
+
+  sensor         Sensor  @relation(fields: [sensorId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  alertsReading  Alert[] @relation("AlertReading")
+
+  @@index([sensorId])
+  @@index([recordedAt])
+  @@index([source])
+  @@map("energy_readings")
+}
+
+model Alert {
+  id                String         @id @default(uuid()) @db.Char(36)
+  type              AlertType
+  title             String         @db.VarChar(200)
+  description       String?        @db.Text
+  severity          AlertSeverity
+  status            AlertStatus    @default(ACTIVE)
+  buildingId        String?        @map("building_id") @db.Char(36)
+  classroomId       String?        @map("classroom_id") @db.Char(36)
+  sensorId          String?        @map("sensor_id") @db.Char(36)
+  readingId         String?        @map("reading_id") @db.Char(36)
+  resolvedByUserId  String?        @map("resolved_by_user_id") @db.Char(36)
+  detectedAt        DateTime       @map("detected_at") @db.DateTime(3)
+  resolvedAt        DateTime?      @map("resolved_at") @db.DateTime(3)
+  createdAt         DateTime       @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt         DateTime       @updatedAt @map("updated_at") @db.DateTime(3)
+
+  building       Building?       @relation("AlertBuilding", fields: [buildingId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  classroom      Classroom?      @relation("AlertClassroom", fields: [classroomId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  sensor         Sensor?         @relation("AlertSensor", fields: [sensorId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  reading        EnergyReading?  @relation("AlertReading", fields: [readingId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  resolvedByUser User?           @relation("AlertResolvedByUser", fields: [resolvedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  alertEvents    AlertEvent[]
+
+  @@index([status])
+  @@index([detectedAt])
+  @@index([type])
+  @@index([buildingId])
+  @@index([classroomId])
+  @@index([sensorId])
+  @@index([readingId])
+  @@index([resolvedByUserId])
+  @@map("alerts")
+}
+
+model AlertEvent {
+  id           String    @id @default(uuid()) @db.Char(36)
+  alertId      String    @map("alert_id") @db.Char(36)
+  fromStatus   AlertStatus?
+  toStatus     AlertStatus
+  userId       String?   @map("user_id") @db.Char(36)
+  note         String?   @db.Text
+  createdAt    DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+
+  alert Alert @relation(fields: [alertId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([alertId])
+  @@index([userId])
+  @@map("alert_events")
+}
+
+model SavingRanking {
+  id                  String          @id @default(uuid()) @db.Char(36)
+  buildingId          String?         @map("building_id") @db.Char(36)
+  classroomId         String?         @map("classroom_id") @db.Char(36)
+  period              RankingPeriod
+  previousConsumption Decimal         @map("previous_consumption") @db.Decimal(12, 4)
+  currentConsumption  Decimal         @map("current_consumption") @db.Decimal(12, 4)
+  estimatedSaving     Decimal         @map("estimated_saving") @db.Decimal(12, 4)
+  savingPercentage    Decimal         @map("saving_percentage") @db.Decimal(6, 2)
+  position            Int             @db.UnsignedInt
+  calculatedAt        DateTime        @map("calculated_at") @db.DateTime(3)
+  createdAt           DateTime        @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt           DateTime        @updatedAt @map("updated_at") @db.DateTime(3)
+
+  building  Building?  @relation("SavingRankingBuilding", fields: [buildingId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  classroom Classroom? @relation("SavingRankingClassroom", fields: [classroomId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([buildingId])
+  @@index([classroomId])
+  @@index([period])
+  @@index([calculatedAt])
+  @@index([period, calculatedAt])
+  @@map("saving_rankings")
+}
+
+model AiAnalysis {
+  id               String         @id @default(uuid()) @db.Char(36)
+  period           RankingPeriod
+  buildingId       String?        @map("building_id") @db.Char(36)
+  classroomId      String?        @map("classroom_id") @db.Char(36)
+  sensorId         String?        @map("sensor_id") @db.Char(36)
+  summary          String         @db.Text
+  predictions      Json           @db.Json
+  recommendations  Json           @db.Json
+  riskLevel        AlertSeverity  @map("risk_level")
+  modelName        String         @map("model_name") @db.VarChar(100)
+  promptVersion    String?        @map("prompt_version") @db.VarChar(100)
+  context          Json?          @db.Json
+  generatedAt      DateTime       @map("generated_at") @db.DateTime(3)
+  createdAt        DateTime       @default(now()) @map("created_at") @db.DateTime(3)
+
+  building  Building?  @relation(fields: [buildingId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  classroom Classroom? @relation(fields: [classroomId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  sensor    Sensor?    @relation(fields: [sensorId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([period])
+  @@index([generatedAt])
+  @@index([buildingId])
+  @@index([classroomId])
+  @@index([sensorId])
+  @@map("ai_analyses")
+}
